@@ -1,7 +1,7 @@
 import axios from "axios";
 import React, { useEffect } from "react";
 
-const EmailVerificationButton= () => {
+const EmailVerificationButton = () => {
   useEffect(() => {
     // Load the script for the phone/email sign-in button
     const script = document.createElement("script");
@@ -14,36 +14,32 @@ const EmailVerificationButton= () => {
       user_json_url: string;
       user_email_id: string;
     }) => {
-        console.log("I am in phoneEmailReceiver")
+      console.log("I am in phoneEmailReceiver");
       const { user_json_url, user_email_id } = userObj;
 
       console.log(user_json_url);
 
- Const token_Response = await axios
+      const tokenResponse = await axios
         .post("http://localhost:4000/create-token", {
           user_json_url,
           user_email_id,
         })
         .then((response) => {
-
           console.log(response);
           const token = response.data.token;
           console.log("token", token);
           localStorage.setItem("token", token);
-
         })
         .catch((error) => {
           console.log(error);
         });
     };
 
-
     // Cleanup script and listener on component unmount
     return () => {
       document.body.removeChild(script);
       delete (window as any).phoneEmailReceiver;
     };
-
   }, []);
 
   return (

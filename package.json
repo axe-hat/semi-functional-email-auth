@@ -1,0 +1,30 @@
+{
+  "name": "semi-functional-email-auth",
+  "version": "0.1.0",
+  "description": "React/TypeScript email verification component using phone.email API",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint src/ --ext .ts,.tsx",
+    "test": "jest --passWithNoTests"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.3.0"
+  },
+  "keywords": [
+    "email",
+    "verification",
+    "authentication",
+    "react",
+    "typescript"
+  ],
+  "license": "MIT"
+}
