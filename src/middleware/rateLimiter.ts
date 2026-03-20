@@ -1,3 +1,5 @@
+import type { RateLimiterConfig } from "../types";
+
 /**
  * Client-side rate limiter using a sliding window approach.
  *
@@ -10,12 +12,11 @@ export class RateLimiter {
   private windowMs: number;
 
   /**
-   * @param maxRequests - Maximum number of requests allowed within the window
-   * @param windowMs - Time window in milliseconds (default: 60000 = 1 minute)
+   * @param config - Configuration with maxRequests and windowMs
    */
-  constructor(maxRequests: number = 5, windowMs: number = 60000) {
-    this.maxRequests = maxRequests;
-    this.windowMs = windowMs;
+  constructor(config: RateLimiterConfig = { maxRequests: 5, windowMs: 60000 }) {
+    this.maxRequests = config.maxRequests;
+    this.windowMs = config.windowMs;
   }
 
   /**

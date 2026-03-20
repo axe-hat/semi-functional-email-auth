@@ -1,11 +1,10 @@
+import type { EmailValidationResult, PasswordStrengthResult } from "../types";
+
 /**
  * Email validation using RFC 5322 compliant regex pattern.
  * Checks both format and common structural requirements.
  */
-export function validateEmail(email: string): {
-  isValid: boolean;
-  error?: string;
-} {
+export function validateEmail(email: string): EmailValidationResult {
   if (!email || email.trim().length === 0) {
     return { isValid: false, error: "Email address is required" };
   }
@@ -54,18 +53,7 @@ export function validateEmail(email: string): {
  * Checks minimum length, uppercase, lowercase, digit, and special character.
  * Returns a strength level and list of unmet criteria.
  */
-export function validatePasswordStrength(password: string): {
-  strength: "weak" | "medium" | "strong";
-  score: number;
-  criteria: {
-    minLength: boolean;
-    hasUppercase: boolean;
-    hasLowercase: boolean;
-    hasDigit: boolean;
-    hasSpecialChar: boolean;
-  };
-  unmetCriteria: string[];
-} {
+export function validatePasswordStrength(password: string): PasswordStrengthResult {
   const criteria = {
     minLength: password.length >= 8,
     hasUppercase: /[A-Z]/.test(password),

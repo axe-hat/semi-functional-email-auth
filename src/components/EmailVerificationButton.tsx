@@ -2,14 +2,18 @@ import axios from "axios";
 import React, { useEffect, useState } from "react";
 import { validateEmail } from "../utils/validation";
 import { handleApiError, NetworkError } from "../utils/errorHandler";
+import type { UserObject, VerificationState } from "../types";
 
 const CLIENT_ID = process.env.REACT_APP_CLIENT_ID || "YOUR_CLIENT_ID";
 const API_URL = process.env.API_URL || "http://localhost:4000";
 
 const EmailVerificationButton = () => {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isVerified, setIsVerified] = useState(false);
+  const [state, setState] = useState<VerificationState>({
+    isLoading: false,
+    isVerified: false,
+    error: null,
+    email: null,
+  });
 
   useEffect(() => {
     // Load the script for the phone/email sign-in button
@@ -19,21 +23,25 @@ const EmailVerificationButton = () => {
     document.body.appendChild(script);
 
     // Define the listener function
-    (window as any).phoneEmailReceiver = async (userObj: {
-      user_json_url: string;
-      user_email_id: string;
-    }) => {
+    (window as any).phoneEmailReceiver = async (userObj: UserObject) => {
       const { user_json_url, user_email_id } = userObj;
 
       // Validate the email before sending
       const emailCheck = validateEmail(user_email_id);
       if (!emailCheck.isValid) {
-        setError(emailCheck.error || "Invalid email address");
+        setState((prev) => ({
+          ...prev,
+          error: emailCheck.error || "Invalid email address",
+        }));
         return;
       }
 
-      setIsLoading(true);
-      setError(null);
+      setState((prev) => ({
+        ...prev,
+        isLoading: true,
+        error: null,
+        email: user_email_id,
+      }));
 
       try {
         const response = await axios.post(`${API_URL}/create-token`, {
@@ -43,16 +51,23 @@ const EmailVerificationButton = () => {
 
         const token = response.data.token;
         localStorage.setItem("token", token);
-        setIsVerified(true);
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          isVerified: true,
+        }));
       } catch (err) {
         const typedError = handleApiError(err);
-        setError(typedError.message);
 
         if (typedError instanceof NetworkError && typedError.retryable) {
           console.warn("Retryable error occurred:", typedError.message);
         }
-      } finally {
-        setIsLoading(false);
+
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: typedError.message,
+        }));
       }
     };
 
@@ -65,7 +80,7 @@ const EmailVerificationButton = () => {
 
   return (
     <div style={{ position: "relative" }}>
-      {error && (
+      {state.error && (
         <div
           role="alert"
           style={{
@@ -78,11 +93,11 @@ const EmailVerificationButton = () => {
             fontSize: "14px",
           }}
         >
-          {error}
+          {state.error}
         </div>
       )}
 
-      {isVerified && (
+      {state.isVerified && (
         <div
           style={{
             color: "#155724",
@@ -98,7 +113,7 @@ const EmailVerificationButton = () => {
         </div>
       )}
 
-      {isLoading && (
+      {state.isLoading && (
         <div
           style={{
             textAlign: "center",
@@ -114,7 +129,7 @@ const EmailVerificationButton = () => {
       <div
         className="pe_verify_email"
         data-client-id={CLIENT_ID}
-        style={{ opacity: isLoading ? 0.5 : 1 }}
+        style={{ opacity: state.isLoading ? 0.5 : 1 }}
       ></div>
     </div>
   );
