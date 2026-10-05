@@ -1,4 +1,4 @@
-import { validateEmail, validatePasswordStrength, sanitizeInput } from "../src/utils/validation";
+import { validateEmail, validatePasswordStrength, sanitizeInput } from "../src/utils/validation.js";
 
 describe("validateEmail", () => {
   describe("valid emails", () => {
@@ -69,8 +69,9 @@ describe("validateEmail", () => {
 
   describe("edge cases", () => {
     it("should reject an email exceeding 254 characters", () => {
-      const longLocal = "a".repeat(200);
-      const result = validateEmail(`${longLocal}@example.com`);
+      // valid 64-char local part + long (but valid-label) domain = 255 chars
+      const longDomain = `${"b".repeat(63)}.${"c".repeat(63)}.${"d".repeat(58)}.com`;
+      const result = validateEmail(`${"a".repeat(64)}@${longDomain}`);
       expect(result.isValid).toBe(false);
       expect(result.error).toBe("Email address is too long");
     });
@@ -86,6 +87,25 @@ describe("validateEmail", () => {
       const result = validateEmail("user@example.c");
       expect(result.isValid).toBe(false);
       expect(result.error).toBe("Invalid top-level domain");
+    });
+
+    it("should reject more than one @ symbol", () => {
+      expect(validateEmail("a@b@example.com").isValid).toBe(false);
+    });
+
+    it("should reject leading, trailing or repeated dots in the local part", () => {
+      expect(validateEmail(".user@example.com").isValid).toBe(false);
+      expect(validateEmail("user.@example.com").isValid).toBe(false);
+      expect(validateEmail("us..er@example.com").isValid).toBe(false);
+    });
+
+    it("should reject domain labels starting or ending with a hyphen", () => {
+      expect(validateEmail("user@-example.com").isValid).toBe(false);
+      expect(validateEmail("user@example-.com").isValid).toBe(false);
+    });
+
+    it("should reject a numeric top-level domain", () => {
+      expect(validateEmail("user@example.123").error).toBe("Invalid top-level domain");
     });
 
     it("should handle null-like input gracefully", () => {

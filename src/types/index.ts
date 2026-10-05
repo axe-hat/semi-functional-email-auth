@@ -1,23 +1,27 @@
 /**
- * Represents the user object returned by the phone.email verification API.
+ * Payload phone.email passes to `window.phoneEmailReceiver` after the user
+ * verifies their address. `user_json_url` points at
+ * `https://user.phone.email/<id>.json`; the backend reads the verified email
+ * from it (never trust `user_email_id` from the browser on its own).
  */
 export interface UserObject {
   user_json_url: string;
   user_email_id: string;
 }
 
-/**
- * Response from the /create-token endpoint.
- */
+/** Successful response from the backend's `POST /create-token`. */
 export interface TokenResponse {
-  token: string;
-  expiresIn?: number;
-  refreshToken?: string;
+  email: string;
+  expiresIn: number;
 }
 
-/**
- * Tracks the current state of the email verification flow.
- */
+/** The verified user handed to `onVerified`. */
+export interface VerifiedUser {
+  email: string;
+  expiresIn: number;
+}
+
+/** Tracks the current state of the email verification flow. */
 export interface VerificationState {
   isLoading: boolean;
   isVerified: boolean;
@@ -25,25 +29,19 @@ export interface VerificationState {
   email: string | null;
 }
 
-/**
- * Configuration options for the client-side rate limiter.
- */
+/** Configuration options for the client-side rate limiter. */
 export interface RateLimiterConfig {
   maxRequests: number;
   windowMs: number;
 }
 
-/**
- * Result of an email validation check.
- */
+/** Result of an email validation check. */
 export interface EmailValidationResult {
   isValid: boolean;
   error?: string;
 }
 
-/**
- * Password strength assessment result.
- */
+/** Password strength assessment result. */
 export interface PasswordStrengthResult {
   strength: "weak" | "medium" | "strong";
   score: number;
@@ -55,4 +53,11 @@ export interface PasswordStrengthResult {
     hasSpecialChar: boolean;
   };
   unmetCriteria: string[];
+}
+
+declare global {
+  interface Window {
+    /** Callback phone.email's widget script invokes after verification. */
+    phoneEmailReceiver?: (userObj: UserObject) => void;
+  }
 }

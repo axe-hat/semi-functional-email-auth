@@ -1,30 +1,75 @@
 {
   "name": "semi-functional-email-auth",
-  "version": "0.1.0",
-  "description": "React/TypeScript email verification component using phone.email API",
+  "version": "1.0.0",
+  "description": "React + TypeScript \"Verify with email\" button for phone.email, with a secure Express backend that issues an httpOnly session cookie.",
+  "type": "module",
   "main": "dist/index.js",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
-  "scripts": {
-    "build": "tsc",
-    "lint": "eslint src/ --ext .ts,.tsx",
-    "test": "jest --passWithNoTests"
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
-  "dependencies": {
-    "axios": "^1.6.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
+    "test:all": "npm test && npm --prefix server test",
+    "dev:server": "npm --prefix server run dev",
+    "dev:demo": "npm --prefix demo run dev"
+  },
+  "peerDependencies": {
+    "react": ">=17.0.0",
+    "react-dom": ">=17.0.0"
   },
   "devDependencies": {
-    "@types/react": "^18.2.0",
-    "@types/react-dom": "^18.2.0",
-    "typescript": "^5.3.0"
+    "@eslint/js": "^10.0.1",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.3",
+    "@types/jest": "^30.0.0",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^15.15.0",
+    "jest": "^30.5.2",
+    "jest-environment-jsdom": "^30.5.2",
+    "prettier": "^3.9.9",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "ts-jest": "^29.4.14",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.71.0"
   },
   "keywords": [
     "email",
     "verification",
     "authentication",
+    "phone.email",
     "react",
     "typescript"
   ],
-  "license": "MIT"
+  "author": "Akshat Kumar Jha",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/axe-hat/semi-functional-email-auth.git"
+  },
+  "engines": {
+    "node": ">=18"
+  }
 }
