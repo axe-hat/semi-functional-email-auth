@@ -1,0 +1,507 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "semi-functional-email-auth server",
+    "version": "1.1.0",
+    "description": "Confirms phone.email verifications, keeps the session in an httpOnly cookie, and adds passkey sign-in.\n\nAll state-changing requests must come from an allowed origin (`CORS_ORIGIN`); browsers' `Origin` / `Sec-Fetch-Site` headers are checked. Responses with personal data are sent with `Cache-Control: no-store`.",
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:4000",
+      "description": "Local development"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Email verification",
+      "description": "Sign in by verifying an email address with phone.email."
+    },
+    {
+      "name": "Session",
+      "description": "The httpOnly cookie session."
+    },
+    {
+      "name": "Passkeys",
+      "description": "Add a passkey after email verification and sign in with it later (WebAuthn)."
+    },
+    {
+      "name": "Operations",
+      "description": "Health checks."
+    }
+  ],
+  "paths": {
+    "/create-token": {
+      "post": {
+        "operationId": "createToken",
+        "tags": ["Email verification"],
+        "summary": "Sign in with a phone.email verification",
+        "description": "The server fetches `user_json_url` itself and reads the verified email from phone.email. Each URL works once. Rate limit: 10 per minute per IP.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["user_json_url"],
+                "properties": {
+                  "user_json_url": {
+                    "type": "string",
+                    "format": "uri",
+                    "pattern": "^https://user\\.phone\\.email/user_[\\w-]+\\.json$",
+                    "example": "https://user.phone.email/user_abc123.json"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Signed in. Sets the session cookie.",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`__Host-session` (HTTPS) or `session` (HTTP): HttpOnly, SameSite"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignedIn"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error",
+            "description": "This verification URL was already used."
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "502": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": []
+      }
+    },
+    "/me": {
+      "get": {
+        "operationId": "getSession",
+        "tags": ["Session"],
+        "summary": "Who is signed in",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The signed-in user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/logout": {
+      "post": {
+        "operationId": "logout",
+        "tags": ["Session"],
+        "summary": "Sign out",
+        "description": "Revokes the session server-side (a copied cookie stops working), clears the cookie and sends `Clear-Site-Data: \"cookies\"`.",
+        "responses": {
+          "204": {
+            "description": "Signed out"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": []
+      }
+    },
+    "/passkeys": {
+      "get": {
+        "operationId": "listPasskeys",
+        "tags": ["Passkeys"],
+        "summary": "List the signed-in user's passkeys",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Passkeys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Passkey"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/passkeys/{id}": {
+      "delete": {
+        "operationId": "deletePasskey",
+        "tags": ["Passkeys"],
+        "summary": "Delete one of the signed-in user's passkeys",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/passkeys/register/options": {
+      "post": {
+        "operationId": "startPasskeyRegistration",
+        "tags": ["Passkeys"],
+        "summary": "Start adding a passkey",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "description": "Returns WebAuthn creation options (pass to `startRegistration({ optionsJSON })`). The challenge is valid for 5 minutes, once.",
+        "responses": {
+          "200": {
+            "description": "PublicKeyCredentialCreationOptionsJSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/passkeys/register/verify": {
+      "post": {
+        "operationId": "finishPasskeyRegistration",
+        "tags": ["Passkeys"],
+        "summary": "Finish adding a passkey",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["response"],
+                "properties": {
+                  "response": {
+                    "type": "object",
+                    "description": "RegistrationResponseJSON from the browser"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Passkey added",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/passkeys/login/options": {
+      "post": {
+        "operationId": "startPasskeySignIn",
+        "tags": ["Passkeys"],
+        "summary": "Start signing in with a passkey",
+        "description": "Returns a `flowId` and WebAuthn request options for discoverable credentials (pass `options` to `startAuthentication({ optionsJSON })`).",
+        "responses": {
+          "200": {
+            "description": "Options",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "flowId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "options": {
+                      "type": "object",
+                      "description": "PublicKeyCredentialRequestOptionsJSON"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": []
+      }
+    },
+    "/passkeys/login/verify": {
+      "post": {
+        "operationId": "finishPasskeySignIn",
+        "tags": ["Passkeys"],
+        "summary": "Finish signing in with a passkey",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["flowId", "response"],
+                "properties": {
+                  "flowId": {
+                    "type": "string"
+                  },
+                  "response": {
+                    "type": "object",
+                    "description": "AuthenticationResponseJSON from the browser"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Signed in. Sets the session cookie.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignedIn"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": []
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "tags": ["Operations"],
+        "summary": "Liveness check",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "const": "ok"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-session",
+        "description": "Named `session` when the server runs over plain HTTP (development)."
+      }
+    },
+    "schemas": {
+      "SignedIn": {
+        "type": "object",
+        "required": ["email", "expiresIn"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "expiresIn": {
+            "type": "integer",
+            "description": "Session length in seconds"
+          }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "required": ["email", "expiresAt"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "expiresAt": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          }
+        }
+      },
+      "Passkey": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "deviceType": {
+            "enum": ["singleDevice", "multiDevice"]
+          },
+          "backedUp": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "Safe to show to the user"
+          }
+        }
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  }
+}

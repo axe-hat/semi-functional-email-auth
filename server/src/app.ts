@@ -1,42 +1,81 @@
+import { createHash } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
-import jwt from "jsonwebtoken";
+import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import type { ServerConfig } from "./config.js";
+import { MemoryPasskeyStore, type PasskeyStore } from "./passkeyStore.js";
+import { passkeyRouter } from "./passkeys.js";
 import { fetchVerifiedEmail, parseVerificationUrl, VerificationError } from "./phoneEmail.js";
+import { noStore, requireJson, requireTrustedOrigin } from "./security.js";
+import { SessionManager } from "./session.js";
+import { MemoryTtlStore, type TtlStore } from "./store.js";
 
-export const SESSION_COOKIE = "session";
+/** How long a used verification URL is remembered (and refused). */
+export const USED_URL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+export interface AppStores {
+  /** Hashes of phone.email verification URLs that were already used. */
+  usedUrls: TtlStore;
+  /** IDs of sessions revoked by logout. */
+  revokedSessions: TtlStore;
+  /** Pending passkey (WebAuthn) challenges. */
+  challenges: TtlStore<string>;
+  /** Registered passkeys. */
+  passkeys: PasskeyStore;
+}
 
 export interface AppOptions {
   config: ServerConfig;
   fetchImpl?: typeof fetch;
+  /** Shared stores for multi-instance deployments and persistence (default: in memory). */
+  stores?: Partial<AppStores>;
 }
 
+const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
+
 /** Builds the Express app (kept separate from `listen` so tests can use it). */
-export function createApp({ config, fetchImpl = fetch }: AppOptions) {
+export function createApp({ config, fetchImpl = fetch, stores = {} }: AppOptions) {
+  const usedUrls = stores.usedUrls ?? new MemoryTtlStore();
+  const sessions = new SessionManager(config, stores.revokedSessions ?? new MemoryTtlStore());
+
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
+  // JSON API: no HTML is served, so the strictest CSP applies.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: false,
+        directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] },
+      },
+    }),
+  );
   app.use(express.json({ limit: "10kb" }));
   app.use(cookieParser());
   app.use(cors({ origin: config.corsOrigins, credentials: true }));
+  app.use(requireTrustedOrigin(config.corsOrigins));
 
-  const cookieOptions = {
-    httpOnly: true,
-    secure: config.cookieSecure,
-    sameSite: "lax" as const,
-    path: "/",
-  };
-
-  // Server-side limit: per IP, 10 verification attempts per minute.
+  // Server-side limit on sign-in attempts per IP (default 10 per minute).
   const verifyLimiter = rateLimit({
     windowMs: 60_000,
-    limit: 10,
+    limit: config.rateLimitPerMinute,
     standardHeaders: "draft-8",
     legacyHeaders: false,
     message: { message: "Too many verification attempts. Please wait a minute and try again." },
   });
+
+  app.use(
+    "/passkeys",
+    passkeyRouter({
+      config,
+      sessions,
+      passkeys: stores.passkeys ?? new MemoryPasskeyStore(),
+      challenges: stores.challenges ?? new MemoryTtlStore<string>(),
+      rateLimiter: verifyLimiter,
+    }),
+  );
 
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
@@ -45,18 +84,29 @@ export function createApp({ config, fetchImpl = fetch }: AppOptions) {
   app.post(
     "/create-token",
     verifyLimiter,
+    noStore,
+    requireJson,
     async (req: Request, res: Response, next: NextFunction) => {
       try {
         const url = parseVerificationUrl(req.body?.user_json_url);
-        const email = await fetchVerifiedEmail(url, fetchImpl);
-        const token = jwt.sign({ sub: email }, config.jwtSecret, {
-          algorithm: "HS256",
-          expiresIn: config.sessionTtlSeconds,
-        });
-        res.cookie(SESSION_COOKIE, token, {
-          ...cookieOptions,
-          maxAge: config.sessionTtlSeconds * 1000,
-        });
+        // Each verification URL signs in once. Claim it before fetching, so two
+        // parallel requests with the same URL can't both succeed.
+        const key = sha256(url.href);
+        if (!(await usedUrls.add(key, true, USED_URL_TTL_MS))) {
+          throw new VerificationError(
+            "This verification was already used. Please verify again.",
+            409,
+          );
+        }
+        let email: string;
+        try {
+          email = await fetchVerifiedEmail(url, fetchImpl);
+        } catch (err) {
+          // phone.email unreachable: release the URL so the user can retry it.
+          if (err instanceof VerificationError && err.status >= 500) await usedUrls.delete(key);
+          throw err;
+        }
+        sessions.issue(res, email);
         res.json({ email, expiresIn: config.sessionTtlSeconds });
       } catch (err) {
         next(err);
@@ -64,31 +114,34 @@ export function createApp({ config, fetchImpl = fetch }: AppOptions) {
     },
   );
 
-  app.get("/me", (req: Request, res: Response) => {
-    const token = req.cookies?.[SESSION_COOKIE];
-    if (!token) {
-      res.status(401).json({ message: "Not signed in." });
-      return;
-    }
+  app.get("/me", noStore, async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const payload = jwt.verify(token, config.jwtSecret, {
-        algorithms: ["HS256"],
-      }) as jwt.JwtPayload;
-      res.json({
-        email: payload.sub,
-        expiresAt: payload.exp ? new Date(payload.exp * 1000).toISOString() : null,
-      });
-    } catch {
-      res.clearCookie(SESSION_COOKIE, cookieOptions);
-      res
-        .status(401)
-        .json({ message: "Your session has expired or is invalid. Please verify again." });
+      const session = await sessions.read(req);
+      if (session) {
+        res.json({ email: session.email, expiresAt: new Date(session.exp * 1000).toISOString() });
+        return;
+      }
+      if (req.cookies?.[sessions.cookieName]) {
+        sessions.clear(res);
+        res
+          .status(401)
+          .json({ message: "Your session has expired or is invalid. Please verify again." });
+        return;
+      }
+      res.status(401).json({ message: "Not signed in." });
+    } catch (err) {
+      next(err);
     }
   });
 
-  app.post("/logout", (_req, res) => {
-    res.clearCookie(SESSION_COOKIE, cookieOptions);
-    res.status(204).end();
+  app.post("/logout", noStore, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await sessions.revoke(res, await sessions.read(req));
+      res.set("Clear-Site-Data", '"cookies"');
+      res.status(204).end();
+    } catch (err) {
+      next(err);
+    }
   });
 
   app.use((_req, res) => {

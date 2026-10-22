@@ -1,37 +1,9 @@
 import request from "supertest";
 import jwt from "jsonwebtoken";
-import { createApp, SESSION_COOKIE } from "../src/app.js";
-import { loadConfig, type ServerConfig } from "../src/config.js";
-
-const SECRET = "x".repeat(40);
-const config: ServerConfig = {
-  port: 0,
-  jwtSecret: SECRET,
-  sessionTtlSeconds: 3600,
-  corsOrigins: ["http://localhost:5173"],
-  cookieSecure: true,
-  isProduction: false,
-};
-const GOOD_URL = "https://user.phone.email/user_abc123.json";
-
-function phoneEmail(response: { ok?: boolean; status?: number; body?: unknown; throws?: boolean }) {
-  return jest.fn(async () => {
-    if (response.throws) throw new Error("network down");
-    return {
-      ok: response.ok ?? true,
-      status: response.status ?? 200,
-      json: async () => {
-        if (response.body === "not-json") throw new SyntaxError("bad json");
-        return response.body;
-      },
-    } as unknown as Response;
-  });
-}
-
-function cookieFrom(res: request.Response): string {
-  const raw = res.headers["set-cookie"] as unknown as string[];
-  return raw.find((c) => c.startsWith(`${SESSION_COOKIE}=`))!;
-}
+import { createApp } from "../src/app.js";
+import { loadConfig } from "../src/config.js";
+import { sessionCookieName } from "../src/session.js";
+import { config, cookieFrom, GOOD_URL, phoneEmail, SECRET, SESSION_COOKIE } from "./helpers.js";
 
 describe("POST /create-token", () => {
   it("verifies with phone.email and sets a secure httpOnly session cookie", async () => {
@@ -49,9 +21,13 @@ describe("POST /create-token", () => {
     const cookie = cookieFrom(res);
     expect(cookie).toMatch(/HttpOnly/);
     expect(cookie).toMatch(/Secure/);
-    expect(cookie).toMatch(/SameSite=Lax/);
+    expect(cookie).toMatch(/SameSite=Strict/);
+    expect(cookie).toMatch(/^__Host-session=/);
+    expect(res.headers["cache-control"]).toBe("no-store");
     const token = cookie.split(";")[0].split("=")[1];
-    expect((jwt.verify(token, SECRET) as jwt.JwtPayload).sub).toBe("jane@example.com");
+    const payload = jwt.verify(token, SECRET) as jwt.JwtPayload;
+    expect(payload.sub).toBe("jane@example.com");
+    expect(payload.jti).toEqual(expect.any(String));
   });
 
   it.each([
@@ -142,6 +118,108 @@ describe("GET /me and POST /logout", () => {
     const res = await request(createApp({ config })).post("/logout");
     expect(res.status).toBe(204);
     expect(cookieFrom(res)).toMatch(/Expires=Thu, 01 Jan 1970/);
+    expect(res.headers["clear-site-data"]).toBe('"cookies"');
+  });
+
+  it("logout revokes the token server-side, so a copied cookie stops working", async () => {
+    const app = createApp({
+      config,
+      fetchImpl: phoneEmail({ body: { user_email_id: "jane@example.com" } }),
+    });
+    const login = await request(app).post("/create-token").send({ user_json_url: GOOD_URL });
+    const cookie = cookieFrom(login).split(";")[0];
+    expect((await request(app).get("/me").set("Cookie", cookie)).status).toBe(200);
+    expect((await request(app).post("/logout").set("Cookie", cookie)).status).toBe(204);
+    const after = await request(app).get("/me").set("Cookie", cookie);
+    expect(after.status).toBe(401);
+    expect(after.body.message).toMatch(/expired or is invalid/);
+  });
+
+  it("rejects tokens without a session ID", async () => {
+    const legacy = jwt.sign({ sub: "jane@example.com" }, SECRET, { expiresIn: 60 });
+    const res = await request(createApp({ config }))
+      .get("/me")
+      .set("Cookie", `${SESSION_COOKIE}=${legacy}`);
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("replay protection", () => {
+  const ok = () => phoneEmail({ body: { user_email_id: "jane@example.com" } });
+
+  it("accepts each verification URL only once", async () => {
+    const app = createApp({ config, fetchImpl: ok() });
+    const first = await request(app).post("/create-token").send({ user_json_url: GOOD_URL });
+    expect(first.status).toBe(200);
+    const again = await request(app).post("/create-token").send({ user_json_url: GOOD_URL });
+    expect(again.status).toBe(409);
+    expect(again.headers["set-cookie"]).toBeUndefined();
+  });
+
+  it("lets only one of two parallel requests with the same URL through", async () => {
+    const app = createApp({ config, fetchImpl: ok() });
+    const send = () => request(app).post("/create-token").send({ user_json_url: GOOD_URL });
+    const statuses = (await Promise.all([send(), send()])).map((r) => r.status).sort();
+    expect(statuses).toEqual([200, 409]);
+  });
+
+  it("releases the URL when phone.email is unreachable, so the user can retry", async () => {
+    const fetchImpl = jest
+      .fn()
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ user_email_id: "j@x.io" }),
+      });
+    const app = createApp({ config, fetchImpl: fetchImpl as unknown as typeof fetch });
+    const send = () => request(app).post("/create-token").send({ user_json_url: GOOD_URL });
+    expect((await send()).status).toBe(502);
+    expect((await send()).status).toBe(200);
+  });
+});
+
+describe("CSRF defences", () => {
+  const app = () =>
+    createApp({ config, fetchImpl: phoneEmail({ body: { user_email_id: "jane@example.com" } }) });
+
+  it("refuses state-changing requests from other origins", async () => {
+    const res = await request(app())
+      .post("/create-token")
+      .set("Origin", "https://evil.com")
+      .send({ user_json_url: GOOD_URL });
+    expect(res.status).toBe(403);
+    expect(res.headers["set-cookie"]).toBeUndefined();
+    expect((await request(app()).post("/logout").set("Origin", "https://evil.com")).status).toBe(
+      403,
+    );
+  });
+
+  it("refuses cross-site requests that send no Origin", async () => {
+    const res = await request(app())
+      .post("/create-token")
+      .set("Sec-Fetch-Site", "cross-site")
+      .send({ user_json_url: GOOD_URL });
+    expect(res.status).toBe(403);
+  });
+
+  it("allows the configured front end and non-browser clients", async () => {
+    const fromFrontEnd = await request(app())
+      .post("/create-token")
+      .set("Origin", "http://localhost:5173")
+      .set("Sec-Fetch-Site", "same-site")
+      .send({ user_json_url: GOOD_URL });
+    expect(fromFrontEnd.status).toBe(200);
+    const noHeaders = await request(app()).post("/create-token").send({ user_json_url: GOOD_URL });
+    expect(noHeaders.status).toBe(200);
+  });
+
+  it("only accepts JSON bodies on /create-token", async () => {
+    const res = await request(app())
+      .post("/create-token")
+      .type("form")
+      .send({ user_json_url: GOOD_URL });
+    expect(res.status).toBe(415);
   });
 });
 
@@ -151,6 +229,9 @@ describe("app basics", () => {
     const health = await request(app).get("/health");
     expect(health.body).toEqual({ status: "ok" });
     expect(health.headers["x-powered-by"]).toBeUndefined();
+    expect(health.headers["content-security-policy"]).toMatch(/default-src 'none'/);
+    expect(health.headers["x-content-type-options"]).toBe("nosniff");
+    expect(health.headers["strict-transport-security"]).toBeTruthy();
     expect((await request(app).get("/nope")).status).toBe(404);
   });
 
@@ -186,5 +267,38 @@ describe("loadConfig", () => {
     expect(c.port).toBe(5000);
     expect(c.corsOrigins).toEqual(["https://a.com", "https://b.com"]);
     expect(c.cookieSecure).toBe(true);
+    expect(c.cookieSameSite).toBe("strict");
+    expect(c.rateLimitPerMinute).toBe(10);
+    expect(loadConfig({ RATE_LIMIT_PER_MINUTE: "100" }).rateLimitPerMinute).toBe(100);
+    expect(c.webauthn).toEqual({
+      rpId: "a.com",
+      rpName: "Email Auth",
+      origins: ["https://a.com", "https://b.com"],
+    });
+    expect(
+      loadConfig({ WEBAUTHN_RP_ID: "example.com", WEBAUTHN_ORIGINS: "https://app.example.com" })
+        .webauthn,
+    ).toEqual({ rpId: "example.com", rpName: "Email Auth", origins: ["https://app.example.com"] });
+  });
+
+  it("rejects invalid numbers instead of running with NaN", () => {
+    expect(() => loadConfig({ RATE_LIMIT_PER_MINUTE: "ten" })).toThrow(/RATE_LIMIT_PER_MINUTE/);
+    expect(() => loadConfig({ SESSION_TTL_SECONDS: "-5" })).toThrow(/SESSION_TTL_SECONDS/);
+    expect(() => loadConfig({ PORT: "4000.5" })).toThrow(/PORT/);
+    expect(loadConfig({ PORT: "" }).port).toBe(4000);
+  });
+
+  it("validates COOKIE_SAME_SITE", () => {
+    expect(loadConfig({ COOKIE_SAME_SITE: "Lax" }).cookieSameSite).toBe("lax");
+    expect(() => loadConfig({ COOKIE_SAME_SITE: "sometimes" })).toThrow(/strict, lax or none/);
+    expect(() => loadConfig({ COOKIE_SAME_SITE: "none" })).toThrow(/COOKIE_SECURE/);
+    expect(loadConfig({ COOKIE_SAME_SITE: "none", COOKIE_SECURE: "true" }).cookieSameSite).toBe(
+      "none",
+    );
+  });
+
+  it("uses the __Host- cookie prefix only over HTTPS", () => {
+    expect(sessionCookieName({ cookieSecure: true })).toBe("__Host-session");
+    expect(sessionCookieName({ cookieSecure: false })).toBe("session");
   });
 });
