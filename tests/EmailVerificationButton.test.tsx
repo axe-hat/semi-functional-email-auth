@@ -1,5 +1,6 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
 import EmailVerificationButton from "../src/components/EmailVerificationButton.js";
+import { useEmailVerification } from "../src/hooks/useEmailVerification.js";
 import {
   loadPhoneEmailScript,
   resetPhoneEmailScriptState,
@@ -110,7 +111,8 @@ describe("EmailVerificationButton", () => {
   it("limits repeated attempts", async () => {
     mockFetch(500, {});
     render(<EmailVerificationButton clientId="c" scriptSrc={SRC} />);
-    for (let i = 0; i < 6; i++) await verify();
+    for (let i = 0; i < 6; i++)
+      await verify({ ...USER, user_json_url: `https://user.phone.email/user_${i}.json` });
     expect(await screen.findByRole("alert")).toHaveTextContent(/Too many attempts/);
   });
 
@@ -131,6 +133,93 @@ describe("EmailVerificationButton", () => {
     const { unmount } = render(<EmailVerificationButton clientId="c" scriptSrc={SRC} />);
     unmount();
     expect(window.phoneEmailReceiver).toBeUndefined();
+  });
+});
+
+describe("EmailVerificationButton customisation", () => {
+  it("uses custom labels and class names", async () => {
+    mockFetch(200, { email: "jane@example.com", expiresIn: 60 });
+    render(
+      <EmailVerificationButton
+        clientId="c"
+        scriptSrc={SRC}
+        labels={{ verified: (email) => `Correo verificado: ${email}` }}
+        classNames={{ success: "ok", widget: "my-widget" }}
+      />,
+    );
+    await verify();
+    const success = await screen.findByText("Correo verificado: jane@example.com");
+    expect(success).toHaveClass("ok");
+    expect(success).toHaveStyle({ backgroundColor: "#d4edda" });
+    expect(document.querySelector(".pe_verify_email")).toHaveClass("my-widget");
+  });
+
+  it("drops the built-in styles when unstyled", async () => {
+    mockFetch(401, { message: "Nope." });
+    render(
+      <EmailVerificationButton clientId="c" scriptSrc={SRC} unstyled classNames={{ error: "e" }} />,
+    );
+    await verify();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveClass("e");
+    expect(alert).not.toHaveAttribute("style");
+  });
+});
+
+describe("useEmailVerification", () => {
+  it("exposes the verification state and can reset it", async () => {
+    mockFetch(200, { email: "jane@example.com", expiresIn: 60 });
+    const { result } = renderHook(() => useEmailVerification({ scriptSrc: SRC }));
+    await verify();
+    await waitFor(() => expect(result.current.state.isVerified).toBe(true));
+    act(() => result.current.reset());
+    expect(result.current.state).toEqual({
+      isLoading: false,
+      isVerified: false,
+      error: null,
+      email: null,
+    });
+  });
+});
+
+describe("phone.email widget lifecycle", () => {
+  it("delivers each verification once, even if the widget reports it twice", async () => {
+    const fetchMock = mockFetch(200, { email: "jane@example.com", expiresIn: 60 });
+    render(<EmailVerificationButton clientId="c" scriptSrc={SRC} />);
+    await verify();
+    await verify();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-runs the widget script when the button mounts again into an empty element", async () => {
+    const load = () =>
+      act(async () => {
+        document.querySelectorAll(`script[src="${SRC}"]`).forEach((s) => {
+          s.dispatchEvent(new Event("load"));
+        });
+      });
+    const first = render(<EmailVerificationButton clientId="c" scriptSrc={SRC} />);
+    const original = document.querySelector(`script[src="${SRC}"]`);
+    await load();
+    // Simulate the widget drawing its button, then the button unmounting.
+    document.querySelector(".pe_verify_email")!.appendChild(document.createElement("button"));
+    first.unmount();
+
+    render(<EmailVerificationButton clientId="c" scriptSrc={SRC} />);
+    const rerun = document.querySelectorAll(`script[src="${SRC}"]`);
+    expect(rerun).toHaveLength(1);
+    expect(rerun[0]).not.toBe(original);
+  });
+
+  it("doesn't re-run the script while the widget is already drawn", async () => {
+    render(<EmailVerificationButton clientId="c" scriptSrc={SRC} />);
+    const script = document.querySelector(`script[src="${SRC}"]`)!;
+    await act(async () => {
+      script.dispatchEvent(new Event("load"));
+    });
+    document.querySelector(".pe_verify_email")!.appendChild(document.createElement("button"));
+    await loadPhoneEmailScript(SRC);
+    expect(document.querySelector(`script[src="${SRC}"]`)).toBe(script);
   });
 });
 

@@ -1,6 +1,6 @@
 {
   "name": "semi-functional-email-auth",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "React + TypeScript \"Verify with email\" button for phone.email, with a secure Express backend that issues an httpOnly session cookie.",
   "type": "module",
   "main": "dist/index.js",
@@ -9,8 +9,13 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
+      "default": "./dist/index.js"
+    },
+    "./passkeys": {
+      "types": "./dist/passkeys/index.d.ts",
+      "default": "./dist/passkeys/index.js"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
@@ -26,17 +31,30 @@
     "format:check": "prettier --check .",
     "test": "jest",
     "test:coverage": "jest --coverage",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build && npm run lint:package",
     "test:all": "npm test && npm --prefix server test",
     "dev:server": "npm --prefix server run dev",
-    "dev:demo": "npm --prefix demo run dev"
+    "dev:demo": "npm --prefix demo run dev",
+    "lint:package": "publint && attw --pack . --profile esm-only",
+    "test:e2e": "npm --prefix e2e test",
+    "changeset": "changeset",
+    "release": "npm run check && changeset publish"
   },
   "peerDependencies": {
+    "@simplewebauthn/browser": ">=13.0.0",
     "react": ">=17.0.0",
     "react-dom": ">=17.0.0"
   },
+  "peerDependenciesMeta": {
+    "@simplewebauthn/browser": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@changesets/cli": "^2.31.1",
     "@eslint/js": "^10.0.1",
+    "@simplewebauthn/browser": "^14.0.0",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.3",
@@ -49,6 +67,7 @@
     "jest": "^30.5.2",
     "jest-environment-jsdom": "^30.5.2",
     "prettier": "^3.9.9",
+    "publint": "^0.3.25",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "ts-jest": "^29.4.14",
@@ -61,15 +80,25 @@
     "authentication",
     "phone.email",
     "react",
-    "typescript"
+    "typescript",
+    "passkeys",
+    "webauthn"
   ],
   "author": "Akshat Kumar Jha",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/axe-hat/semi-functional-email-auth.git"
+    "url": "git+https://github.com/axe-hat/semi-functional-email-auth.git"
+  },
+  "homepage": "https://github.com/axe-hat/semi-functional-email-auth#readme",
+  "bugs": {
+    "url": "https://github.com/axe-hat/semi-functional-email-auth/issues"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.19"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

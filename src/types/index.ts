@@ -29,6 +29,30 @@ export interface VerificationState {
   email: string | null;
 }
 
+/** The signed-in user, as returned by the backend's `GET /me`. */
+export interface Session {
+  email: string;
+  /** ISO 8601 timestamp, or null if the backend didn't say. */
+  expiresAt: string | null;
+}
+
+export type SessionStatus = "loading" | "authenticated" | "unauthenticated";
+
+/** Text shown by `EmailVerificationButton` (override for other languages). */
+export interface VerificationLabels {
+  verifying: string;
+  /** Called with the verified email address. */
+  verified: (email: string) => string;
+}
+
+/** Extra classes for each part of `EmailVerificationButton`. */
+export interface VerificationClassNames {
+  status?: string;
+  success?: string;
+  error?: string;
+  widget?: string;
+}
+
 /** Configuration options for the client-side rate limiter. */
 export interface RateLimiterConfig {
   maxRequests: number;
