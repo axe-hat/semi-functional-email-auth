@@ -1,0 +1,23 @@
+# One-command demo: JWT_SECRET=$(openssl rand -hex 32) VITE_PHONE_EMAIL_CLIENT_ID=<id> docker compose up --build
+# then open http://localhost:8080 (set DEMO_PORT to use another port)
+services:
+  server:
+    build: ./server
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET, e.g. JWT_SECRET=$(openssl rand -hex 32)}
+      CORS_ORIGIN: http://localhost:${DEMO_PORT:-8080}
+      # Plain HTTP on localhost; behind HTTPS, remove this (secure is the production default).
+      COOKIE_SECURE: "false"
+    restart: unless-stopped
+
+  demo:
+    build:
+      context: .
+      dockerfile: demo/Dockerfile
+      args:
+        VITE_PHONE_EMAIL_CLIENT_ID: ${VITE_PHONE_EMAIL_CLIENT_ID:-}
+    ports:
+      - "${DEMO_PORT:-8080}:8080"
+    depends_on:
+      server:
+        condition: service_healthy
