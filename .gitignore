@@ -18,3 +18,10 @@ coverage/
 .DS_Store
 .vscode/
 .idea/
+
+# Playwright
+test-results/
+playwright-report/
+
+# npm pack output
+*.tgz

@@ -10,7 +10,10 @@
     "isolatedModules": true,
     "allowImportingTsExtensions": false,
     "types": ["vite/client"],
-    "paths": { "semi-functional-email-auth": ["../src/index.ts"] }
+    "paths": {
+      "semi-functional-email-auth": ["../src/index.ts"],
+      "semi-functional-email-auth/passkeys": ["../src/passkeys/index.ts"]
+    }
   },
   "include": ["src", "vite.config.ts"]
 }

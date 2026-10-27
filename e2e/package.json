@@ -1,0 +1,14 @@
+{
+  "name": "semi-functional-email-auth-e2e",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:docker": "docker compose -f docker-compose.e2e.yml up --build --detach --wait && E2E_BASE_URL=http://localhost:${E2E_DOCKER_PORT:-5181} playwright test; status=$?; docker compose -f docker-compose.e2e.yml down --rmi local; exit $status",
+    "install-browser": "playwright install --with-deps chromium firefox webkit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1"
+  }
+}

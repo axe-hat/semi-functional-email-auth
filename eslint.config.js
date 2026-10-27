@@ -4,7 +4,17 @@ import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 
 export default tseslint.config(
-  { ignores: ["dist", "coverage", "node_modules", "**/dist", "**/node_modules", "demo/dist"] },
+  {
+    ignores: [
+      "dist",
+      "coverage",
+      "node_modules",
+      "**/dist",
+      "**/node_modules",
+      "**/test-results",
+      "**/playwright-report",
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -19,5 +29,6 @@ export default tseslint.config(
   {
     files: ["**/*.cjs"],
     languageOptions: { globals: globals.node, sourceType: "commonjs" },
+    rules: { "@typescript-eslint/no-require-imports": "off" },
   },
 );

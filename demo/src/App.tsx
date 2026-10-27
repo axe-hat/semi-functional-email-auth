@@ -1,48 +1,19 @@
-import { useEffect, useState } from "react";
-import { EmailVerificationButton, type VerifiedUser } from "semi-functional-email-auth";
+import { useState } from "react";
+import { EmailVerificationButton, useSession } from "semi-functional-email-auth";
+import { usePasskeys } from "semi-functional-email-auth/passkeys";
 
 const CLIENT_ID = import.meta.env.VITE_PHONE_EMAIL_CLIENT_ID as string | undefined;
 
-interface Session {
-  email: string;
-  expiresAt: string | null;
-}
-
-// The session lives in an httpOnly cookie, so ask the backend who we are.
-async function fetchSession(): Promise<Session | null> {
-  try {
-    const res = await fetch("/me", { credentials: "include" });
-    return res.ok ? ((await res.json()) as Session) : null;
-  } catch {
-    return null;
-  }
-}
-
 export default function App() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [checking, setChecking] = useState(true);
+  // The session lives in an httpOnly cookie, so the hook asks the backend (GET /me).
+  const { status, session, error, refresh, logout } = useSession();
+  const passkeys = usePasskeys();
+  const [added, setAdded] = useState(false);
+  const notice = error ?? passkeys.error;
 
-  const refresh = () =>
-    fetchSession().then((s) => {
-      setSession(s);
-      setChecking(false);
-    });
-
-  useEffect(() => {
-    let active = true;
-    fetchSession().then((s) => {
-      if (!active) return;
-      setSession(s);
-      setChecking(false);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const logout = async () => {
-    await fetch("/logout", { method: "POST", credentials: "include" });
-    setSession(null);
+  const addPasskey = async () => setAdded(await passkeys.register());
+  const signInWithPasskey = async () => {
+    if (await passkeys.signIn()) await refresh();
   };
 
   return (
@@ -50,7 +21,7 @@ export default function App() {
       <h1>Verify with email</h1>
       <p className="muted">
         phone.email verifies the address; the backend confirms it and sets an httpOnly session
-        cookie.
+        cookie. Add a passkey to skip the email step next time.
       </p>
 
       {!CLIENT_ID && (
@@ -58,8 +29,13 @@ export default function App() {
           Set <code>VITE_PHONE_EMAIL_CLIENT_ID</code> in <code>demo/.env</code> to show the button.
         </p>
       )}
+      {notice && (
+        <p className="warn" role="alert">
+          {notice.message}
+        </p>
+      )}
 
-      {checking ? (
+      {status === "loading" ? (
         <p className="muted">Checking your session…</p>
       ) : session ? (
         <section className="profile">
@@ -69,15 +45,35 @@ export default function App() {
           {session.expiresAt && (
             <p className="muted">Session expires {new Date(session.expiresAt).toLocaleString()}</p>
           )}
-          <button onClick={logout}>Sign out</button>
+          {added && <p className="ok">Passkey added. Next time, sign in with it.</p>}
+          <div className="actions">
+            {passkeys.supported && (
+              <button onClick={() => void addPasskey()} disabled={passkeys.isWorking}>
+                Add a passkey
+              </button>
+            )}
+            <button
+              className="secondary"
+              onClick={() => {
+                setAdded(false);
+                void logout();
+              }}
+            >
+              Sign out
+            </button>
+          </div>
         </section>
       ) : (
-        CLIENT_ID && (
-          <EmailVerificationButton
-            clientId={CLIENT_ID}
-            onVerified={(_user: VerifiedUser) => void refresh()}
-          />
-        )
+        <section className="signin">
+          {CLIENT_ID && (
+            <EmailVerificationButton clientId={CLIENT_ID} onVerified={() => void refresh()} />
+          )}
+          {passkeys.supported && (
+            <button onClick={() => void signInWithPasskey()} disabled={passkeys.isWorking}>
+              Sign in with a passkey
+            </button>
+          )}
+        </section>
       )}
     </main>
   );

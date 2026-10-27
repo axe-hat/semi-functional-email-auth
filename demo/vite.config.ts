@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
 
 const API = process.env.API_URL ?? "http://localhost:4000";
+const src = (path: string) => fileURLToPath(new URL(`../src/${path}`, import.meta.url));
 
 export default defineConfig({
   plugins: [react()],
@@ -10,9 +11,10 @@ export default defineConfig({
     // One React instance for the demo and the library source it imports.
     dedupe: ["react", "react-dom"],
     // Use the library's source directly so the demo always reflects local changes.
-    alias: {
-      "semi-functional-email-auth": fileURLToPath(new URL("../src/index.ts", import.meta.url)),
-    },
+    alias: [
+      { find: /^semi-functional-email-auth\/passkeys$/, replacement: src("passkeys/index.ts") },
+      { find: /^semi-functional-email-auth$/, replacement: src("index.ts") },
+    ],
   },
   server: {
     port: 5173,
@@ -21,6 +23,7 @@ export default defineConfig({
       "/create-token": API,
       "/me": API,
       "/logout": API,
+      "/passkeys": API,
     },
   },
 });
