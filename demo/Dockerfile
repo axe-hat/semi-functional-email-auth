@@ -13,7 +13,7 @@ ARG VITE_PHONE_EMAIL_CLIENT_ID=""
 ENV VITE_PHONE_EMAIL_CLIENT_ID=$VITE_PHONE_EMAIL_CLIENT_ID
 RUN npm --prefix demo run build
 
-FROM nginx:1.29-alpine
+FROM nginx:1.31-alpine
 # Where the API runs; the template is rendered into conf.d/default.conf at start-up.
 ENV API_UPSTREAM=http://server:4000
 COPY demo/nginx.conf.template /etc/nginx/templates/default.conf.template
