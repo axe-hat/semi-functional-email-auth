@@ -1,0 +1,41 @@
+# Opens a "Version Packages" PR from pending changesets; merging it publishes to
+# npm with provenance via trusted publishing (OIDC), so no NPM_TOKEN is stored.
+# One-time setup: publish 1.1.0 by hand once (`npm publish`), then on npmjs.com
+# package settings -> Trusted publishing -> GitHub Actions, repository
+# axe-hat/semi-functional-email-auth, workflow release.yml. Finally set the
+# repository variable NPM_PUBLISH=true (Settings -> Secrets and variables ->
+# Actions -> Variables); until then this job is skipped.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency: release-${{ github.ref }}
+
+jobs:
+  release:
+    if: vars.NPM_PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
+        with:
+          publish: npm run release
+          title: "Release: version packages"
+          commit: "Release: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
