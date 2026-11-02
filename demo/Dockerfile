@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Build context is the repository root: the demo imports the library from ../src.
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /repo
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
