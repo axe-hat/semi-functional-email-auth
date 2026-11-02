@@ -4,7 +4,8 @@ Thanks for helping out! Bug reports, docs fixes and pull requests are all welcom
 
 ## Setup
 
-Requirements: Node.js 20.19+ (22 or 24 recommended).
+Requirements: Node.js 22.11+ (22, 24 or 26) to work on the repo; the published library itself still
+supports Node.js 20.19+.
 
 ```bash
 npm install

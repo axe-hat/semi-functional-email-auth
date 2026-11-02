@@ -4,6 +4,15 @@ updates:
     directories: ["/", "/server", "/demo", "/e2e", "/e2e/consumer"]
     schedule:
       interval: weekly
+    # The library is developed against the oldest React it supports (18); React 19 has its own CI
+    # job. Moving the dev copy to a new major would silently drop the React 18 coverage.
+    ignore:
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react*"
+        update-types: ["version-update:semver-major"]
     groups:
       dev-dependencies:
         dependency-type: development

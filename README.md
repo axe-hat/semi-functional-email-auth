@@ -74,7 +74,7 @@ JWT_SECRET=$(openssl rand -hex 32) VITE_PHONE_EMAIL_CLIENT_ID=<your id> docker c
 The demo image is nginx serving the built app and proxying the API to `API_UPSTREAM` (default
 `http://server:4000`), so you can also run it in front of a backend hosted elsewhere.
 
-**With Node.js 20.19+** (22 or 24 recommended):
+**With Node.js 22.11+** (22, 24 or 26):
 
 ```bash
 npm install                     # library (needed by the demo)
@@ -261,7 +261,7 @@ npm --prefix server run build && npm --prefix server start   # production build 
 
 CI (GitHub Actions) runs on every push and pull request:
 
-- the library on Node 22 and 24, and on React 19;
+- the library and the backend on Node 22, 24 and 26, and the library on React 19;
 - the packed package, installed and built in a fresh app (ESM imports and `require()`);
 - the backend with a coverage gate;
 - end-to-end tests in Chromium, Firefox and WebKit, and again against the Docker images;
