@@ -1,11 +1,34 @@
 version: 2
 updates:
   - package-ecosystem: npm
-    directories: ["/", "/server", "/demo", "/e2e", "/e2e/consumer"]
+    directories: ["/", "/server"]
     schedule:
       interval: weekly
-    # The library is developed against the oldest React it supports (18); React 19 has its own CI
-    # job. Moving the dev copy to a new major would silently drop the React 18 coverage.
+    ignore:
+      # The library is developed against the oldest React it supports (18); React 19 has its own CI
+      # job. Moving the dev copy to a new major would silently drop the React 18 coverage.
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react*"
+        update-types: ["version-update:semver-major"]
+      # TypeScript 7 has no stable compiler API yet, and ts-jest and typescript-eslint both need it
+      # (their peer ranges stop below 7). Lift this once they support it.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+      production-dependencies:
+        dependency-type: production
+        update-types: [minor, patch]
+  - package-ecosystem: npm
+    # The demo and the consumer test build with Vite and plain tsc, so they can follow TypeScript 7.
+    directories: ["/demo", "/e2e", "/e2e/consumer"]
+    schedule:
+      interval: weekly
     ignore:
       - dependency-name: "react"
         update-types: ["version-update:semver-major"]
